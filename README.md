@@ -1,12 +1,58 @@
 # Star Fox Enhanced
 
-> **Unofficial stereo 3D mod build.** This branch of the Star Fox Enhanced
-> port (upstream: <https://github.com/kandowontu2/starfox-enhanced>) adds
-> stereoscopic output modes. It is not affiliated with or endorsed by the
-> upstream authors, Nintendo, or Argonaut. Licensed GPLv3; see `CREDITS.md`
-> and `THIRD_PARTY_NOTICES.md`. Release page:
-> <https://github.com/agrofubris/starfox-enhanced-stereo/releases> — no ROM,
-> game assets or saves are distributed.
+> **Unofficial stereo 3D mod build.** Not affiliated with or endorsed by the
+> upstream authors, Nintendo, or Argonaut. Licensed GPLv3; no ROM, game
+> assets or saves are distributed. See [Stereo 3D mod](#stereo-3d-mod) below
+> and the
+> [release page](https://github.com/agrofubris/starfox-enhanced-stereo/releases).
+
+## Stereo 3D mod
+
+This repository is the stereo 3D patch for the Star Fox Enhanced PC port. It
+is a drop-in `starfox_pc.exe` for the official 0.0.8 release that renders a
+true per-eye stereo pair: each eye gets its own camera offset rather than a
+shifted copy of a flat image. It affects presentation only; the fixed-point
+simulation and gameplay are unchanged.
+
+**Eight 3D modes:** Half SBS, Full SBS, Half TaB, Full TaB, Crossview, Row
+Interlaced, Row Interlaced Reversed and Leia SR.
+
+- **3D SEPARATION** and **3D CONVERGENCE** rows in Options, saved between runs.
+- Flat assets that are not part of the 3D scene — HUD, menus, dialogue and
+  screen wipes — stay at screen depth, so close models cannot push the UI out
+  of comfort.
+- **Leia SR** uses the Simulated Reality weaver and eye tracking on the D3D12
+  backend; without the SR Platform or an SR display it falls back to Full SBS
+  automatically, with no missing-DLL popups.
+- Works with the port's display modes and render scales.
+
+### Install
+
+1. Download the official Star Fox Enhanced 0.0.8 release and extract it into a
+   writable folder.
+2. Back up its `starfox_pc.exe`, then replace it with the mod's executable.
+3. Put your own supported Star Fox ROM (`.sfc`/`.smc`) beside it and launch.
+   The first run validates the ROM and builds `Starfox-Assets.BIN` locally.
+4. Open Options → 3D OUTPUT, select the mode your display uses, then tune
+   3D SEPARATION and 3D CONVERGENCE.
+
+No ROM, game assets or saves are distributed. The release page carries the
+download, requirements and test notes.
+
+### Credits
+
+- **kandowontu2** and contributors — the Star Fox Enhanced port this patch
+  builds on (<https://github.com/kandowontu2/starfox-enhanced>).
+- **oneup03** — RT64 3D work
+  (<https://github.com/oneup03/rt64-3D>), whose Leia SR implementation this
+  patch follows.
+- **bo3b** — [SR-lib](https://github.com/bo3b/SR-lib), the Simulated Reality
+  wrapper used for the optional D3D12 weave.
+- **Nintendo** and **Argonaut Software** — original Star Fox / Starwing.
+- **UltraStarFox** and **Star Fox EX** contributors.
+
+Licensed GPLv3, the same license as the upstream project; see `LICENSE`,
+`THIRD_PARTY_NOTICES.md` and `CREDITS.md`.
 
 A native C++/SDL3 port of [UltraStarFox](https://github.com/Sunlitspace542/ultrastarfox),
 with **Original Star Fox** and **Star Fox EX** experiences, high-frame-rate

@@ -18,8 +18,8 @@ simulation and gameplay are unchanged.
 Interlaced, Row Interlaced Reversed and Leia SR.
 
 - **3D SEPARATION** and **3D CONVERGENCE** rows in Options, saved between runs.
-- Flat assets that are not part of the 3D scene: HUD, menus, dialogue and
-  screen wipes, stay at screen depth, so close models cannot push the UI out
+- Flat assets that are not part of the 3D scene — HUD, menus, dialogue and
+  screen wipes — stay at screen depth, so close models cannot push the UI out
   of comfort.
 - **Leia SR** uses the Simulated Reality weaver and eye tracking on the D3D12
   backend; without the SR Platform or an SR display it falls back to Full SBS
@@ -248,5 +248,4 @@ Q) How do I reset settings to default?
 A) Hold L+R on the pre-game menu until it resets the settings.
 
 Q) What have you personally tested this on?
-
 A) Retroid Pocket Flip (60fps with no upscaling effects, less with any), iPhone 17 Pro Max (120fps with 2x upscaling and raytracing), Steam Deck, Quest 3, PC. About the stereo 3D modes, agrofubris tested it on a Passive 3D monitor - Leia SR should be tested with compatible devices only.

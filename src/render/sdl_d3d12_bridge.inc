@@ -253,7 +253,13 @@ static bool Starfox_D3D12_PresentWeave(void *command, void *source, void *swapch
     source_subresource = D3D12_INTERNAL_FetchTextureSubresource(source_container, 0, 0);
     D3D12_INTERNAL_TextureSubresourceTransitionFromDefaultUsage(cb, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, source_subresource);
     D3D12_INTERNAL_TrackTexture(cb, source_subresource->parent);
+    // The target is an ordinary app-owned SDL texture, whose default state is
+    // a shader resource. Transition it for the callback and back afterwards;
+    // binding a freshly acquired swapchain here would skip that and is no
+    // longer the supported path.
     target_subresource = D3D12_INTERNAL_FetchTextureSubresource(target_container, 0, 0);
+    D3D12_INTERNAL_TextureSubresourceTransitionFromDefaultUsage(cb, D3D12_RESOURCE_STATE_RENDER_TARGET, target_subresource);
+    D3D12_INTERNAL_TrackTexture(cb, target_subresource->parent);
     rtv = target_subresource->rtvHandles[0].cpuHandle;
     ID3D12GraphicsCommandList_OMSetRenderTargets(cb->graphicsCommandList, 1, &rtv, false, NULL);
     Starfox_D3D12_BindDescriptorHeaps(cb);
@@ -270,6 +276,7 @@ static bool Starfox_D3D12_PresentWeave(void *command, void *source, void *swapch
     result = callback(user, cb->graphicsCommandList, source_subresource->parent->resource,
         width, height, (uint32_t)SDLToD3D12_TextureFormat[target_container->header.info.format]);
     ID3D12GraphicsCommandList_OMSetRenderTargets(cb->graphicsCommandList, 0, NULL, false, NULL);
+    D3D12_INTERNAL_TextureSubresourceTransitionToDefaultUsage(cb, D3D12_RESOURCE_STATE_RENDER_TARGET, target_subresource);
     D3D12_INTERNAL_TextureSubresourceTransitionToDefaultUsage(cb, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, source_subresource);
     Starfox_D3D12_BindDescriptorHeaps(cb);
     cb->currentGraphicsPipeline = NULL;

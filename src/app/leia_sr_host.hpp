@@ -28,8 +28,22 @@ public:
         if (sr_) return true;
         if (unavailable_ || !d3d12_device || !hwnd) { unavailable_ = true; return false; }
         SimulatedReality::SRInterfaceDX12* sr = nullptr;
-        const HRESULT hr = SimulatedReality::CreateSRInterfaceDX12(
-            static_cast<ID3D12Device*>(d3d12_device), static_cast<HWND>(hwnd), &sr);
+        HRESULT hr = E_FAIL;
+        try {
+            hr = SimulatedReality::CreateSRInterfaceDX12(
+                static_cast<ID3D12Device*>(d3d12_device), static_cast<HWND>(hwnd), &sr);
+        } catch (const std::exception& error) {
+            // The SR runtime is optional and lives outside the app; a throw
+            // here must degrade to the side-by-side fallback, never abort.
+            std::cerr << "leia-sr: CreateSRInterfaceDX12 threw: " << error.what()
+                << "; presenting side-by-side\n";
+            unavailable_ = true;
+            return false;
+        } catch (...) {
+            std::cerr << "leia-sr: CreateSRInterfaceDX12 threw; presenting side-by-side\n";
+            unavailable_ = true;
+            return false;
+        }
         if (FAILED(hr) || !sr) {
             unavailable_ = true;
             std::cerr << "leia-sr: CreateSRInterfaceDX12 failed (hr=0x" << std::hex
@@ -78,7 +92,9 @@ public:
     // releasing the device or any texture the weaver sampled.
     void release() noexcept {
         if (sr_) {
-            sr_->Delete();
+            // Delete() can throw if the device was lost under the weaver;
+            // never let teardown escape during renderer destruction.
+            try { sr_->Delete(); } catch (...) {}
             sr_ = nullptr;
         }
         output_format_ = 0U;
@@ -88,7 +104,7 @@ public:
     // side-by-side image instead of retrying a broken runtime every frame.
     void disable() noexcept {
         if (sr_) {
-            sr_->Delete();
+            try { sr_->Delete(); } catch (...) {}
             sr_ = nullptr;
         }
         output_format_ = 0U;

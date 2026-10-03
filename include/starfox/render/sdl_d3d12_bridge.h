@@ -69,13 +69,15 @@ typedef struct StarfoxSdlD3D12PresentBridgeV1 {
     bool (*restore)(void *device);
 } StarfoxSdlD3D12PresentBridgeV1;
 
-/* Output weaving (Leia SR): the command buffer must already hold a swapchain
- * texture acquired for the target window. SDL binds that backbuffer as the
- * single render target at the supplied extent, transitions the source texture
- * to PIXEL_SHADER_RESOURCE, passes its native resource to the callback, and
- * restores the target's default state on return. The callback must not submit
- * or close the command list; false fails the weave and the caller presents
- * plainly instead. The output format is the bound RTV's DXGI format. */
+/* Output weaving (Leia SR): source and target are single-mip 2D SDL textures
+ * owned by the application (pass an SDL_GPUTexture). SDL binds the target as
+ * the single render target at the supplied extent, transitions both textures
+ * for the callback, passes the source's native resource to the callback, and
+ * restores their default states on return. The callback must not submit or
+ * close the command list; false fails the weave and the caller presents
+ * plainly instead. The output format is the bound RTV's DXGI format. Do not
+ * pass a freshly acquired swapchain texture: it is already a render target
+ * and skips the transition contract. */
 #define STARFOX_SDL_D3D12_PRESENT_WEAVE "starfox.gpu.d3d12.present-weave.v1"
 typedef bool (*StarfoxD3D12PresentWeaveCallback)(void *user, void *command_list,
     void *native_source, uint32_t width, uint32_t height, uint32_t output_format);

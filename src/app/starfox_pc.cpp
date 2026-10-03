@@ -52,6 +52,9 @@
 #include "renderer_window.hpp"
 #include "dlss_host.hpp"
 #include "leia_sr_host.hpp"
+#if defined(_WIN32) && !defined(STARFOX_UWP)
+#include <d3d12.h>
+#endif
 #include "neural_filter_host.hpp"
 #include "startup_trace.hpp"
 #if defined(SDL_PLATFORM_IOS)
@@ -1769,6 +1772,35 @@ public:
         if(renderer_mode_==starfox::simulation::RendererMode::gpu)
             recreate_renderer(renderer_mode_);
     }
+    // A removed D3D12 device makes every later SDL GPU call fail. Detect it
+    // and rebuild the renderer instead of exiting the application: a lost
+    // device then costs one frame, not the session.
+    bool gpu_device_lost() const noexcept {
+#if defined(_WIN32) && !defined(STARFOX_UWP)
+        auto* gpu=static_cast<SDL_GPUDevice*>(effect_device());
+        if(!gpu) return false;
+        auto* native=SDL_GetPointerProperty(SDL_GetGPUDeviceProperties(gpu),
+            STARFOX_SDL_D3D12_DEVICE,nullptr);
+        if(!native) return false;
+        return static_cast<ID3D12Device*>(native)->GetDeviceRemovedReason()!=S_OK;
+#else
+        return false;
+#endif
+    }
+    bool note_device_loss(const char* what) {
+        if(!gpu_device_lost()) return false;
+        device_loss_pending_=true;
+        if(std::getenv("STARFOX_TRACE_GPU"))
+            std::cerr<<"gpu-device: lost during "<<what<<"; recreating next frame\n";
+        return true;
+    }
+    bool recover_device_loss() {
+        if(!device_loss_pending_) return false;
+        device_loss_pending_=false;
+        std::cerr<<"gpu-device: device removed; recreating the renderer\n";
+        recreate_renderer(renderer_mode_);
+        return true;
+    }
     bool amd_adapter() const {return adapter_vendor_==0x1002U;}
     void begin_temporal_frame(std::uint64_t scene,std::uint32_t context,bool paused) {
         temporal_paused_=paused;
@@ -1895,8 +1927,12 @@ public:
         stereo_scene_ready_=false;
         for(auto*& eye:stereo_eye_textures_) {SDL_DestroyTexture(eye);eye=nullptr;}
         SDL_DestroyTexture(stereo_packed_texture_);stereo_packed_texture_=nullptr;
+        SDL_DestroyTexture(stereo_leia_texture_);stereo_leia_texture_=nullptr;
         stereo_packed_width_=stereo_packed_height_=0;
         stereo_eye_width_=stereo_eye_height_=0;
+        stereo_leia_width_=stereo_leia_height_=0;
+        stereo_packed_bgra_=false;
+        leia_size_settled_=true;
     }
     bool retain_stereo_eye(unsigned eye) {
         if(eye>1 || !native_gpu_enabled() || !deferred_eye_pixels_) return false;
@@ -1916,14 +1952,19 @@ public:
         const bool ready=SDL_UpdateTexture(stereo_eye_textures_[eye],nullptr,rgba_.data(),
             static_cast<int>(width*4U))
             && SDL_SetTextureScaleMode(stereo_eye_textures_[eye],SDL_SCALEMODE_NEAREST);
+        if(!ready) note_device_loss("stereo eye upload");
         deferred_eye_pixels_=false;
         // Finish recording these reads before the next eye reuses effect textures.
         return ready && SDL_FlushRenderer(renderer_);
     }
-    // Hand the packed side-by-side pair to the Leia SR weaver and present the
-    // woven swap chain directly. False leaves the same image to the plain
-    // side-by-side presenter (a missing SR runtime, display or D3D12 backend).
+    // Hand the packed side-by-side pair to the Leia SR weaver, which writes
+    // into an app-owned texture presented through the normal renderer. False
+    // leaves the same image to the plain side-by-side presenter (a missing SR
+    // runtime, display, D3D12 backend, or a weave the runtime refused).
     bool present_leia_sr() {
+        // Escape hatch for SR testers: force the side-by-side fallback without
+        // touching the weaver at all.
+        if(std::getenv("STARFOX_DISABLE_LEIA_WEAVE")) return false;
         // The runtime/display probe happens once per renderer; after a refusal
         // keep presenting the side-by-side fallback without retrying.
         if(leia_sr_.unavailable()) return false;
@@ -1956,22 +1997,24 @@ public:
         if(!bridge || bridge->version!=1 || !bridge->weave) {
             leia_sr_.disable();return decline("missing SDL weave bridge");
         }
-        auto* packed=static_cast<SDL_GPUTexture*>(SDL_GetPointerProperty(
-            SDL_GetTextureProperties(stereo_packed_texture_),
-            SDL_PROP_TEXTURE_GPU_TEXTURE_POINTER,nullptr));
-        if(!packed) return decline("missing packed texture");
+        auto* packed=effect_texture(stereo_packed_texture_);
+        auto* target=stereo_leia_texture_?effect_texture(stereo_leia_texture_):nullptr;
+        if(!packed || !target) return decline("missing weave textures");
+        if(!leia_size_settled_) {
+            // The pack or weave target changed size this frame; give SDL one
+            // frame to settle its own swap chain before weaving into it.
+            leia_size_settled_=true;
+            if(trace) std::cerr<<"leia-sr: settling after resize\n";
+            return false;
+        }
         // Submit the renderer's composition first: the weave samples it on the
         // same D3D12 queue through a separate command buffer.
         if(!SDL_FlushRenderer(renderer_)) return decline_sdl("flush");
         auto* command=SDL_AcquireGPUCommandBuffer(gpu);
         if(!command) return decline_sdl("command buffer");
-        SDL_GPUTexture* swapchain=nullptr;Uint32 width=0,height=0;
-        if(!SDL_WaitAndAcquireGPUSwapchainTexture(command,window_,&swapchain,&width,&height)
-            || !swapchain || !width || !height) {
-            SDL_CancelGPUCommandBuffer(command);return decline_sdl("swapchain acquire");
-        }
         struct WeaveContext {LeiaSrHost* host;} context{&leia_sr_};
-        const bool woven=bridge->weave(command,packed,swapchain,width,height,
+        const std::uint32_t width=stereo_leia_width_,height=stereo_leia_height_;
+        const bool woven=bridge->weave(command,packed,target,width,height,
             [](void* user,void* list,void* source,std::uint32_t source_width,
                 std::uint32_t source_height,std::uint32_t output_format) {
                 return static_cast<WeaveContext*>(user)->host->weave(
@@ -1985,10 +2028,8 @@ public:
             if(trace) std::cerr<<"leia-sr: falling back at bridge weave\n";
             return false;
         }
-        pace_present();
         if(!SDL_SubmitGPUCommandBuffer(command)) return false;
-        if(std::getenv("STARFOX_TRACE_GPU"))
-            std::cerr<<"stereo presented: leia-sr "<<width<<'x'<<height<<'\n';
+        if(trace) std::cerr<<"leia-sr: wove "<<width<<'x'<<height<<'\n';
         return true;
     }
     bool present_stereo(const starfox::render::GpuSceneRecording& recording,
@@ -2044,6 +2085,12 @@ public:
         int leia_output_width=0,leia_output_height=0;
         if(leia && (!SDL_GetRenderOutputSize(renderer_,&leia_output_width,&leia_output_height)
             || leia_output_width<=0 || leia_output_height<=0)) return failed("leia output extent");
+        if(leia) {
+            // Keep the panel extent even: an odd width would also make each
+            // side-by-side half a fractional size.
+            leia_output_width&=~1;leia_output_height&=~1;
+            if(leia_output_width<2 || leia_output_height<2) return failed("leia output extent");
+        }
         const unsigned packed_width=leia
             ?static_cast<unsigned>(leia_output_width)*2U
             :stereo_eye_width_*(full_horizontal?2U:1U);
@@ -2068,15 +2115,39 @@ public:
             output_rect.y=(output_height-output_rect.h)/2;
             packed_height=static_cast<unsigned>(output_rect.h);
         }
+        if(leia) {
+            if(!stereo_leia_texture_
+                || stereo_leia_width_!=static_cast<unsigned>(leia_output_width)
+                || stereo_leia_height_!=static_cast<unsigned>(leia_output_height)) {
+                SDL_DestroyTexture(stereo_leia_texture_);
+                // The SR SDK examples use B8G8R8A8 for the weave target;
+                // matching the swap-chain format keeps the weaver's views and
+                // pipeline in the format they were built for.
+                stereo_leia_texture_=SDL_CreateTexture(renderer_,SDL_PIXELFORMAT_BGRA32,
+                    SDL_TEXTUREACCESS_TARGET,leia_output_width,leia_output_height);
+                stereo_leia_width_=static_cast<unsigned>(leia_output_width);
+                stereo_leia_height_=static_cast<unsigned>(leia_output_height);
+                leia_size_settled_=false;
+                if(!stereo_leia_texture_) return failed("leia output texture");
+            }
+            if(!SDL_SetTextureScaleMode(stereo_leia_texture_,SDL_SCALEMODE_LINEAR))
+                return failed("leia output scale mode");
+        }
         const unsigned packed_texture_width=
             interlaced?static_cast<unsigned>(output_rect.w):packed_width;
+        const bool packed_bgra=leia;
         if(!stereo_packed_texture_ || stereo_packed_width_!=packed_texture_width
-            || stereo_packed_height_!=packed_height) {
+            || stereo_packed_height_!=packed_height || stereo_packed_bgra_!=packed_bgra) {
             SDL_DestroyTexture(stereo_packed_texture_);
-            stereo_packed_texture_=SDL_CreateTexture(renderer_,SDL_PIXELFORMAT_RGBA32,
+            // The Leia weaver expects the paired input in the panel's byte
+            // order; the other modes keep the app's usual RGBA texture.
+            stereo_packed_texture_=SDL_CreateTexture(renderer_,
+                packed_bgra?SDL_PIXELFORMAT_BGRA32:SDL_PIXELFORMAT_RGBA32,
                 SDL_TEXTUREACCESS_TARGET,int(packed_texture_width),int(packed_height));
             stereo_packed_width_=packed_texture_width;
             stereo_packed_height_=packed_height;
+            stereo_packed_bgra_=packed_bgra;
+            if(leia) leia_size_settled_=false;
             if(!stereo_packed_texture_) return false;
         }
         // Interlaced fields are one output row tall, so the default linear
@@ -2163,11 +2234,35 @@ public:
                 }
             }
         }
-        // Leia SR weaves the packed pair through the SR runtime; the direct
-        // full-SBS presentation below is its fallback.
-        if(leia && present_leia_sr()) {
+        // Leia SR weaves the packed pair through the SR runtime into the
+        // app-owned panel texture; the direct full-SBS presentation below is
+        // its fallback.
+        if(leia && stereo_leia_texture_ && present_leia_sr()) {
+            if(const auto* path=std::getenv("STARFOX_CAPTURE_LEIA_PATH")) {
+                // Diagnostic readback of the woven panel image: black here
+                // means the weave produced nothing; a good image with a black
+                // window would instead point at presentation.
+                if(!SDL_SetRenderTarget(renderer_,stereo_leia_texture_)) return false;
+                auto* capture=SDL_RenderReadPixels(renderer_,nullptr);
+                SDL_SetRenderTarget(renderer_,nullptr);
+                if(!capture) return false;
+                const bool saved=SDL_SaveBMP(capture,path);
+                SDL_DestroySurface(capture);
+                if(!saved) return false;
+            }
+            // Present the woven image 1:1 through the normal renderer, so SDL
+            // keeps ownership of the swap chain and of display-mode changes.
+            if(!SDL_SetRenderLogicalPresentation(renderer_,0,0,
+                SDL_LOGICAL_PRESENTATION_DISABLED)) return false;
             stereo_output_rect_active_=false;
             stereo_display_active_=true;
+            SDL_SetRenderDrawColor(renderer_,0,0,0,255);SDL_RenderClear(renderer_);
+            if(!SDL_RenderTexture(renderer_,stereo_leia_texture_,nullptr,nullptr)) return false;
+            pace_present();
+            SDL_RenderPresent(renderer_);
+            if(std::getenv("STARFOX_TRACE_GPU"))
+                std::cerr<<"stereo presented: leia-sr "
+                    <<stereo_leia_width_<<'x'<<stereo_leia_height_<<'\n';
             return true;
         }
         if(interlaced) {
@@ -4739,6 +4834,7 @@ private:
             : bloom_layer_ready_ ? std::span<const std::uint8_t>{bloom_base_rgba_} : rgba;
         if (!gpu_uploaded && !SDL_UpdateTexture(texture_, nullptr, base.data(),
                 static_cast<int>(width * 4U))) {
+            if(note_device_loss("base texture upload")) return;
             throw std::runtime_error{std::string{"SDL_UpdateTexture: "} + SDL_GetError()};
         }
         const auto upload_done=trace_present_cost?std::chrono::steady_clock::now():present_begin;
@@ -4746,11 +4842,13 @@ private:
             ensure_1440p_model_textures(width, height);
             if (!gpu_uploaded && !SDL_UpdateTexture(smooth_model_texture_, nullptr,
                     smooth_model_rgba_.data(), static_cast<int>(width * 4U))) {
+                if(note_device_loss("1440p model upload")) return;
                 throw std::runtime_error{
                     std::string{"SDL_UpdateTexture (1440p model): "}
                     + SDL_GetError()};
             }
             if (!SDL_SetRenderTarget(renderer_, smooth_target_texture_)) {
+                if(note_device_loss("1440p render target")) return;
                 throw std::runtime_error{
                     std::string{"SDL_SetRenderTarget (1440p model): "}
                     + SDL_GetError()};
@@ -4773,6 +4871,7 @@ private:
             ensure_bloom_texture(width,height);
             if (!gpu_uploaded && !SDL_UpdateTexture(bloom_texture_, nullptr, bloom_glow_rgba_.data(),
                     static_cast<int>(width * 4U))) {
+                if(note_device_loss("bloom upload")) return;
                 throw std::runtime_error{std::string{"SDL bloom upload: "} + SDL_GetError()};
             }
             SDL_RenderTexture(renderer_, bloom_texture_, nullptr, nullptr);
@@ -4900,6 +4999,14 @@ private:
     SDL_Texture* stereo_packed_texture_{};
     unsigned stereo_packed_width_{};
     unsigned stereo_packed_height_{};
+    bool stereo_packed_bgra_{};
+    // Leia SR weave target. The weaver writes here instead of the swap chain,
+    // so SDL owns presentation and a display-mode switch cannot invalidate the
+    // texture the weaver is bound to. Settling skips the first frame after a
+    // resize so SDL can finish its own swap-chain/renderer resize first.
+    SDL_Texture* stereo_leia_texture_{};
+    unsigned stereo_leia_width_{},stereo_leia_height_{};
+    bool leia_size_settled_{true};
     // Output-pixel rect used by the interlaced modes, which present without
     // logical presentation so the row parity matches the physical display.
     SDL_Rect stereo_output_rect_{};
@@ -4907,6 +5014,9 @@ private:
     // Set by a deferred stereo eye once its composed frame has been downloaded
     // into rgba_, ready for retain_stereo_eye to upload.
     bool deferred_eye_pixels_{};
+    // A removed GPU device does not end the session: the frame loop rebuilds
+    // the renderer after the failing presentation.
+    bool device_loss_pending_{};
     bool stereo_display_active_{};
     unsigned stereo_eye_width_{},stereo_eye_height_{};
     // Stereo tuning captured from the game settings at each submission, so a
@@ -13130,7 +13240,10 @@ constexpr bool mobile_buttons=TouchControls::enabled;
                 presentation_effects.background=nullptr;presentation_effects.background_cpu_coverage={};
                 window.present(framebuffer, palette, circle, presentation_effects);
             }
-            window.finish_temporal_frame(temporal_presented);
+            // If the device was lost during presentation, rebuild it now so
+            // the next frame runs on a fresh device instead of exiting.
+            const bool device_recovered=window.recover_device_loss();
+            window.finish_temporal_frame(device_recovered?false:temporal_presented);
             framebuffer.end_write_coverage();
             if (test_frames != 0 && presented_frames + 1U == test_frames) {
                 if(const auto* prefix=std::getenv("STARFOX_CAPTURE_ISOLATED_PREFIX")) {

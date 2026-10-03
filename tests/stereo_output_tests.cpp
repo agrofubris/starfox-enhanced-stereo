@@ -1,5 +1,6 @@
 #include "starfox/render/stereo_output.hpp"
 #include "starfox/render/gpu_scene.hpp"
+#include "starfox/render/sprite_renderer.hpp"
 #include "starfox/render/model_motion_history.hpp"
 #include "starfox/render/dust_renderer.hpp"
 #include "starfox/render/particle_renderer.hpp"
@@ -308,6 +309,44 @@ int main() {
     require(stereo_layer_shift_px(0,6.4,-1,2048) == 0);
     require(stereo_layer_shift_px(0,6.4,512,
         std::numeric_limits<double>::infinity()) == 0);
+    {
+        // Stereo reticle re-stamp: the renderer must find the tile-$61 group
+        // in a captured OAM copy and draw it at the requested offset. The base
+        // frame has the group suppressed, so a missed find means no reticle.
+        starfox::simulation::SnesPpuState ppu;
+        ppu.main_screen = 0x10U;  // OBJ layer enabled
+        ppu.object_select = 0U;   // tile table 0 (where the test fills tile $61)
+        for (unsigned y = 0; y < 8; ++y)
+            for (unsigned b = 0; b < 2; ++b) ppu.vram[0x61u * 32u + y * 2u + b] = 0xffU;
+        constexpr std::uint8_t attributes = 0x20U; // priority 2, palette 0
+        const std::array<std::uint8_t, 4> flips{0U, 0x40U, 0x80U, 0xc0U};
+        const std::array<std::uint8_t, 4> oam_x{100U, 116U, 100U, 116U};
+        const std::array<std::uint8_t, 4> oam_y{50U, 50U, 66U, 66U};
+        for (unsigned q = 0; q < 4U; ++q) {
+            const auto low = q * 4U;
+            ppu.oam[low] = oam_x[q];
+            ppu.oam[low + 1U] = oam_y[q];
+            ppu.oam[low + 2U] = 0x61U;
+            ppu.oam[low + 3U] = static_cast<std::uint8_t>(attributes | flips[q]);
+        }
+        const auto placement = crosshair_placement(ppu.oam);
+        require(placement && placement->centre_x == 108 && placement->centre_y == 58);
+        SpriteRenderer sprites;
+        Framebuffer straight(256, 224);
+        require(sprites.draw_crosshair(ppu, ppu.oam, straight, 0, 0));
+        const auto lit = [](const Framebuffer& frame, unsigned x, unsigned y) {
+            return frame.pixels()[std::size_t(y) * frame.stored_width() + x] != 0U;
+        };
+        require(lit(straight, 100, 50) && lit(straight, 116, 66));
+        require(!lit(straight, 110, 60)); // gap between the four quadrants
+        Framebuffer shifted(256, 224);
+        require(sprites.draw_crosshair(ppu, ppu.oam, shifted, 12, 0));
+        require(lit(shifted, 112, 50) && !lit(shifted, 100, 50));
+        std::array<std::uint8_t, 544> empty_oam{};
+        require(!crosshair_placement(empty_oam));
+        Framebuffer blank(256, 224);
+        require(!sprites.draw_crosshair(ppu, empty_oam, blank, 0, 0));
+    }
     {
         // Frontend/menu frames anchor models on the far plane: no camera
         // translation, only the vanishing-point shift, so a close model cannot

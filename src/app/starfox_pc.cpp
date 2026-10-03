@@ -9510,6 +9510,9 @@ int main(int argc, char** argv) {
                 // before.
                 if(game.stereo_output()!=0U && game.stereo_crosshair_depth()>0U
                     && window.native_gpu_enabled()) {
+                    // Capture the interpolated group before suppression: the
+                    // re-stamp path finds it in this copy, not in the frame.
+                    reticle_oam=ppu.oam;
                     reticle.ppu=&ppu;
                     reticle.oam=&reticle_oam;
                     reticle.depth=int(game.stereo_crosshair_depth());

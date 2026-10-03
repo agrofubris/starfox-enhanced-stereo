@@ -1315,10 +1315,14 @@ GameTickResult GameSimulation::tick_pregame_menu(
         if (pregame_selection_ == 13U
             && (menu_input.pressed & (starfox::input::left | starfox::input::right
                 | starfox::input::select | starfox::input::a)) != 0U) {
-            // 0.25 source world units per step, 0.25..12.8 range.
-            const auto delta = (menu_input.pressed & starfox::input::left) ? -25 : 25;
+            // 0.25 source world units per step below 12.80, 1.00 above it.
+            // The old 12.80 ceiling sat far below the separation the display
+            // presets actually use (for example 34.00 with convergence 208).
+            const int current=int(stereo_separation_x100_);
+            const int step=current>=1280?100:25;
+            const auto delta = (menu_input.pressed & starfox::input::left) ? -step : step;
             set_stereo_separation_x100(static_cast<std::uint16_t>(
-                std::clamp(int(stereo_separation_x100_) + delta, 25, 1280)));
+                std::clamp(current + delta, 25, 65535)));
             queue_sound_effect(0x11U);
         }
         if (pregame_selection_ == 14U

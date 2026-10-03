@@ -12578,7 +12578,9 @@ constexpr bool mobile_buttons=TouchControls::enabled;
                         const auto row_y=[](int desktop,int mobile) {
                             return TouchControls::enabled?mobile:desktop;
                         };
-                        constexpr std::array<std::string_view,9> stereo_names{"OFF", "HALF SBS", "FULL SBS", "CROSSVIEW", "INTERLACED", "INTERLACED-R", "HALF TAB", "FULL TAB", "LEIA SR"};
+                        // "LEIA SR PANEL" names the display class explicitly;
+                        // bare "LEIA SR" read as an SDK name, not a 3D option.
+                        constexpr std::array<std::string_view,9> stereo_names{"OFF", "HALF SBS", "FULL SBS", "CROSSVIEW", "INTERLACED", "INTERLACED-R", "HALF TAB", "FULL TAB", "LEIA SR PANEL"};
                         draw_row("3D OUTPUT", stereo_names[game.stereo_output()], 25,
                             game.pregame_selection() == 9U);
                         const auto fps_value = game.show_fps()
@@ -13074,12 +13076,21 @@ constexpr bool mobile_buttons=TouchControls::enabled;
                 } else {
                     std::array<starfox::render::shadows::GpuReflectionOutput,2> eyes{};
                     for(unsigned eye=0;eye<2;++eye) {
+                        // Follow the live separation/convergence like the
+                        // shadow path does; the old hardcoded 3.2/512 were the
+                        // default values and misaligned reflections at any
+                        // other setting.
+                        const double eye_x=eye?game.stereo_separation()*.5
+                            :-game.stereo_separation()*.5;
                         auto eye_camera=reflection_camera;
-                        eye_camera.center_x+=reflection_camera.focal_length*(eye?3.2:-3.2)/512.;
+                        eye_camera.center_x+=reflection_camera.focal_length*eye_x
+                            /game.stereo_convergence();
                         auto eye_ground=reflection_ground;
-                        if(eye_ground) eye_ground->point.x-=eye?3.2:-3.2;
+                        if(eye_ground) eye_ground->point.x-=eye_x;
                         auto eye_water=ray_water;
-                        for(unsigned axis=0;axis<3;++axis) eye_water.camera_position[axis]+=ray_water.world_to_view[axis]*(eye?3.2f:-3.2f);
+                        for(unsigned axis=0;axis<3;++axis)
+                            eye_water.camera_position[axis]+=
+                                ray_water.world_to_view[axis]*float(eye_x);
                         if(window.submit_reflections(eye_camera,palette,eye,static_cast<starfox::render::Effect>(game.active_material()),reflection_background,eye_ground,water_input?&eye_water:nullptr,lava_requested?std::max<std::uint8_t>(1,game.reflective_surfaces()):game.reflective_surfaces())) eyes[eye]=window.reflection_output(eye);
                     }
                     reflected=eyes[0].buffer && eyes[1].buffer;

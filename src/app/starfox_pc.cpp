@@ -12730,19 +12730,25 @@ constexpr bool mobile_buttons=TouchControls::enabled;
                             + "."
                             + (game.stereo_separation_x100() % 100U < 10U ? "0" : "")
                             + std::to_string(game.stereo_separation_x100() % 100U);
-                        draw_row("3D SEPARATION", separation_value, row_y(38,38),
+                        draw_row("3D SEPARATION", separation_value, row_y(37,37),
                             game.pregame_selection() == 13U);
                         const auto convergence_value =
                             std::to_string(game.stereo_convergence());
-                        draw_row("3D CONVERGENCE", convergence_value, row_y(51,51),
+                        draw_row("3D CONVERGENCE", convergence_value, row_y(49,49),
                             game.pregame_selection() == 14U);
-                        draw_row("CHEATS", "A  OPEN", row_y(64,64),
+                        const auto reticle_depth_value =
+                            game.stereo_crosshair_depth()==0U
+                                ? std::string{"OFF"}
+                                : std::to_string(game.stereo_crosshair_depth());
+                        draw_row("3D RETICLE DEPTH", reticle_depth_value, row_y(61,61),
+                            game.pregame_selection() == 10U);
+                        draw_row("CHEATS", "A  OPEN", row_y(73,73),
                             game.pregame_selection() == 0U);
-                        draw_row("ON-SCREEN FPS", fps_value, row_y(77,77),
+                        draw_row("ON-SCREEN FPS", fps_value, row_y(85,85),
                             game.pregame_selection() == 1U);
-                        draw_row("CROSSHAIR COLOR", crosshair, row_y(90,90),
+                        draw_row("CROSSHAIR COLOR", crosshair, row_y(97,97),
                             game.pregame_selection() == 2U);
-                        draw_row("CUSTOMIZE SCREEN", "A  OPEN", row_y(103,103),
+                        draw_row("CUSTOMIZE SCREEN", "A  OPEN", row_y(109,109),
                             game.pregame_selection() == 3U);
                         const auto music_volume =
                             std::to_string(game.music_volume()) + "%";
@@ -12752,25 +12758,25 @@ constexpr bool mobile_buttons=TouchControls::enabled;
                             game.on_screen_controls()
                                 ? std::string_view{"ON"}
                                 : std::string_view{"OFF"},
-                            row_y(116,116), game.pregame_selection() == 4U);
+                            row_y(121,121), game.pregame_selection() == 4U);
                         if(mobile_buttons) draw_row("CUSTOMIZE BUTTON LAYOUT", "",
-                            129,game.pregame_selection()==15U);
+                            133,game.pregame_selection()==15U);
                         draw_row("SWAP A/B + Y/X",
                             game.swap_face_buttons()
                                 ? std::string_view{"ON"}
                                 : std::string_view{"OFF"},
-                            row_y(142,142), game.pregame_selection() == 5U);
-                        draw_row("MUSIC VOLUME", music_volume, row_y(155,155),
+                            row_y(145,145), game.pregame_selection() == 5U);
+                        draw_row("MUSIC VOLUME", music_volume, row_y(157,157),
                             game.pregame_selection() == 6U);
-                        draw_row("SFX VOLUME", sfx_volume, row_y(172,172),
+                        draw_row("SFX VOLUME", sfx_volume, row_y(174,174),
                             game.pregame_selection() == 7U);
-                        draw_row("CONTROLLER", "A  REMAP", row_y(185,185),
+                        draw_row("CONTROLLER", "A  REMAP", row_y(187,187),
                             game.pregame_selection() == 8U);
                         constexpr std::array<std::string_view, 6> language_names{
                             "ENGLISH", "JAPANESE", "GERMAN", "FRENCH", "SPANISH", "ENGLISH (EUROPE)"};
-                        draw_row("LANGUAGE", language_names[game.language()], row_y(198,198),
+                        draw_row("LANGUAGE", language_names[game.language()], row_y(200,200),
                             game.pregame_selection() == 12U);
-                        draw_row("BACK", "", row_y(211,211),
+                        draw_row("BACK", "", row_y(213,213),
                             game.pregame_selection() == 11U);
                         const auto draw_volume_bar = [&framebuffer,
                                                          viewport_origin](
@@ -12805,13 +12811,15 @@ constexpr bool mobile_buttons=TouchControls::enabled;
                                 }
                             }
                         };
-                        draw_volume_bar(row_y(164,164), game.music_volume(),
+                        draw_volume_bar(row_y(166,166), game.music_volume(),
                             game.pregame_selection() == 6U);
-                        draw_volume_bar(row_y(181,181), game.sfx_volume(),
+                        draw_volume_bar(row_y(183,183), game.sfx_volume(),
                             game.pregame_selection() == 7U);
+                        // Indexed by selection id; 10 is the stereo reticle
+                        // depth row and 15 the mobile button layout editor.
                         constexpr std::array<std::int32_t, 16> cursor_y{
-                            67, 80, 93, 106, 119, 145, 159, 175, 188, 28, 197,
-                            214, 201, 41, 54, 132};
+                            76, 88, 100, 112, 124, 148, 160, 177, 190, 28, 64,
+                            216, 203, 40, 52, 136};
                         draw_cursor(cursor_y[game.pregame_selection()]);
                     } else {
                         const auto timing = game.timing_mode()

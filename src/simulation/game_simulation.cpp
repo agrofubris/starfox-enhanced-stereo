@@ -1334,6 +1334,15 @@ GameTickResult GameSimulation::tick_pregame_menu(
                 std::clamp(int(stereo_convergence_) + delta, 128, 4096)));
             queue_sound_effect(0x11U);
         }
+        if (pregame_selection_ == 10U
+            && (menu_input.pressed & (starfox::input::left | starfox::input::right
+                | starfox::input::select | starfox::input::a)) != 0U) {
+            // 64 source world units per step; 0 keeps the reticle on screen.
+            const auto delta = (menu_input.pressed & starfox::input::left) ? -64 : 64;
+            set_stereo_crosshair_depth(static_cast<std::uint16_t>(
+                std::clamp(int(stereo_crosshair_depth_) + delta, 0, 65535)));
+            queue_sound_effect(0x11U);
+        }
         if (pregame_selection_ == 12U
             && (menu_input.pressed & (starfox::input::left | starfox::input::right
                 | starfox::input::select | starfox::input::a)) != 0U) {

@@ -98,9 +98,9 @@ inline constexpr std::array<std::uint8_t, 18> neural_three_d_menu_order{7,11,9,3
 #if defined(__ANDROID__) || defined(STARFOX_IOS_RUNTIME)
 // Mobile keeps its touch-layout editor, renumbered to 15 so the stereo
 // separation (13) and convergence (14) rows stay adjacent to 3D OUTPUT.
-inline constexpr std::array<std::uint8_t, 15> options_menu_order{9,13,14,0,1,2,3,4,15,5,6,7,8,12,11};
+inline constexpr std::array<std::uint8_t, 16> options_menu_order{9,13,14,10,0,1,2,3,4,15,5,6,7,8,12,11};
 #else
-inline constexpr std::array<std::uint8_t, 14> options_menu_order{9,13,14,0,1,2,3,4,5,6,7,8,12,11};
+inline constexpr std::array<std::uint8_t, 15> options_menu_order{9,13,14,10,0,1,2,3,4,5,6,7,8,12,11};
 #endif
 inline constexpr std::array<std::uint8_t, 8> cheats_menu_order{0,1,2,3,4,5,7,6};
 inline std::span<const std::uint8_t> pregame_menu_order(PregamePage page, bool neural_available=false) {

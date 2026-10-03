@@ -159,6 +159,7 @@ std::unique_ptr<GameSimulation> GameSimulation::restored_state(
     result->neural_filter_requested_ = neural_filter_requested_;
     result->stereo_separation_x100_ = stereo_separation_x100_;
     result->stereo_convergence_ = stereo_convergence_;
+    result->stereo_crosshair_depth_ = stereo_crosshair_depth_;
     return result;
 }
 

@@ -372,6 +372,100 @@ struct PresentationEffects {
     bool touch_controls{};
 };
 
+// Per-eye reticle re-stamp for stereo output. The base frame is rendered with
+// the reticle OAM suppressed; `ppu` supplies tiles and palette, `oam` is the
+// interpolated group captured before suppression, and `origin` is the sprite
+// pass horizontal origin.
+struct StereoReticleOverlay {
+    const starfox::simulation::SnesPpuState* ppu{};
+    const std::array<std::uint8_t,544>* oam{};
+    int depth{};
+    int origin{};
+    [[nodiscard]] bool active() const noexcept {return ppu&&oam&&depth>0;}
+};
+
+struct FramebufferRegion {
+    int x{},y{},width{},height{};
+    bool has_coverage{};
+    std::vector<std::uint8_t> pixels,tags,coverage;
+};
+FramebufferRegion save_framebuffer_region(
+    const starfox::render::Framebuffer& frame,int x,int y,int width,int height) {
+    FramebufferRegion region;
+    region.x=x;region.y=y;region.width=width;region.height=height;
+    const auto stride=std::size_t(frame.stored_width());
+    const auto count=std::size_t(width)*std::size_t(height);
+    region.pixels.resize(count);region.tags.resize(count);region.coverage.resize(count);
+    const auto coverage=frame.write_coverage();
+    region.has_coverage=coverage.size()==frame.pixels().size();
+    for(int row=0;row<height;++row) {
+        const auto source=std::size_t(y+row)*stride+std::size_t(x);
+        const auto offset=std::size_t(row)*std::size_t(width);
+        std::copy_n(frame.pixels().data()+source,std::size_t(width),region.pixels.data()+offset);
+        if(frame.layer_tags_enabled())
+            std::copy_n(frame.layer_tags().data()+source,std::size_t(width),region.tags.data()+offset);
+        if(region.has_coverage)
+            std::copy_n(coverage.data()+source,std::size_t(width),region.coverage.data()+offset);
+    }
+    return region;
+}
+void restore_framebuffer_region(starfox::render::Framebuffer& frame,
+    const FramebufferRegion& region) {
+    const auto stride=std::size_t(frame.stored_width());
+    for(int row=0;row<region.height;++row) {
+        const auto target=std::size_t(region.y+row)*stride+std::size_t(region.x);
+        const auto offset=std::size_t(row)*std::size_t(region.width);
+        std::copy_n(region.pixels.data()+offset,std::size_t(region.width),
+            frame.pixels().data()+target);
+        if(frame.layer_tags_enabled())
+            std::copy_n(region.tags.data()+offset,std::size_t(region.width),
+                frame.layer_tags().data()+target);
+        if(region.has_coverage) {
+            auto coverage=frame.coverage();
+            if(coverage.size()==frame.pixels().size())
+                std::copy_n(region.coverage.data()+offset,std::size_t(region.width),
+                    coverage.data()+target);
+        }
+    }
+}
+// Stamp the reticle into the frame at a per-eye horizontal offset. The frame
+// must not be recording raster commands: the reticle is presentation-only.
+bool stamp_stereo_reticle(starfox::render::Framebuffer& frame,
+    const StereoReticleOverlay& reticle,int offset_x) {
+    if(!reticle.ppu || !reticle.oam) return false;
+    auto* previous_commands=frame.command_buffer();
+    frame.record_to(nullptr);
+    starfox::render::SpriteRenderer renderer;
+    const bool drawn=renderer.draw_crosshair(*reticle.ppu,*reticle.oam,frame,
+        offset_x,reticle.origin);
+    frame.record_to(previous_commands);
+    return drawn;
+}
+// Bounding box of a shifted reticle in stored pixels, or nothing when the
+// group is absent or entirely off-frame.
+std::optional<std::array<int,4>> stereo_reticle_bounds(
+    const starfox::render::Framebuffer& frame,const StereoReticleOverlay& reticle,
+    int offset_x) {
+    if(!reticle.oam) return std::nullopt;
+    const auto placement=starfox::render::crosshair_placement(*reticle.oam);
+    if(!placement) return std::nullopt;
+    const int scale=static_cast<int>(frame.draw_scale());
+    const int margin=2;
+    const int x0=(reticle.origin+placement->centre_x-16
+        +std::min(0,offset_x)-margin)*scale;
+    const int y0=(placement->centre_y-16-margin)*scale;
+    const int x1=(reticle.origin+placement->centre_x+16
+        +std::max(0,offset_x)+margin)*scale;
+    const int y1=(placement->centre_y+16+margin)*scale;
+    std::array<int,4> box{
+        std::clamp(x0,0,int(frame.stored_width())),
+        std::clamp(y0,0,int(frame.stored_height())),
+        std::clamp(x1,0,int(frame.stored_width())),
+        std::clamp(y1,0,int(frame.stored_height()))};
+    if(box[2]<=box[0]||box[3]<=box[1]) return std::nullopt;
+    return box;
+}
+
 starfox::render::GpuEffectSettings::HorizontalWipe gpu_horizontal_wipe(
     const starfox::render::Framebuffer& frame,const PresentationEffects& effects) {
     starfox::render::GpuEffectSettings::HorizontalWipe w;
@@ -2033,11 +2127,12 @@ public:
         return true;
     }
     bool present_stereo(const starfox::render::GpuSceneRecording& recording,
-        const starfox::render::Framebuffer& frame,std::span<const starfox::render::Rgba8> palette,
+        starfox::render::Framebuffer& frame,std::span<const starfox::render::Rgba8> palette,
         const starfox::simulation::CircleEffectState& circle,const PresentationEffects& effects,
         const starfox::render::RasterCommands& commands,unsigned scale,
         const starfox::render::LayerCompositeSettings& layer,unsigned mode,
-        double stereo_separation=6.4,double stereo_convergence=512.0,bool planar_stereo=false) {
+        double stereo_separation=6.4,double stereo_convergence=512.0,bool planar_stereo=false,
+        const StereoReticleOverlay& reticle={}) {
         const auto failed=[](const char* stage) {
             if(std::getenv("STARFOX_TRACE_GPU")) std::cerr<<"stereo failure: "<<stage<<": "<<SDL_GetError()<<'\n';
             return false;
@@ -2069,8 +2164,32 @@ public:
                 eye_effects.shadow_mask=effects.stereo_shadow_masks[eye];
                 eye_effects.resident_shadow=effects.stereo_resident_shadows[eye];
             }
-            if(!present_native(frame,palette,circle,eye_effects,commands,scale,layer,&output,false)) return failed("eye effects");
-            if(!retain_stereo_eye(eye)) return failed("eye retention");
+            // Re-stamp the reticle at this eye's depth offset. The base frame
+            // was rendered with the reticle suppressed, so no scene pixels are
+            // lost; restoring the touched region keeps the other eye and any
+            // later mono fallback clean.
+            std::optional<FramebufferRegion> reticle_patch;
+            if(reticle.active()) {
+                const auto shift=starfox::render::stereo_layer_shift_px(
+                    eye,stereo_separation_,stereo_convergence_,double(reticle.depth));
+                const auto bounds=stereo_reticle_bounds(frame,reticle,shift);
+                if(bounds) {
+                    reticle_patch=save_framebuffer_region(frame,(*bounds)[0],(*bounds)[1],
+                        (*bounds)[2]-(*bounds)[0],(*bounds)[3]-(*bounds)[1]);
+                    stamp_stereo_reticle(frame,reticle,shift);
+                }
+            }
+            const bool eye_ok=present_native(frame,palette,circle,eye_effects,
+                commands,scale,layer,&output,false);
+            if(reticle_patch) restore_framebuffer_region(frame,*reticle_patch);
+            if(!eye_ok) {
+                stamp_stereo_reticle(frame,reticle,0);
+                return failed("eye effects");
+            }
+            if(!retain_stereo_eye(eye)) {
+                stamp_stereo_reticle(frame,reticle,0);
+                return failed("eye retention");
+            }
         }
         const auto logical_width=starfox::render::presentation_width(texture_width_,texture_height_);
         const auto stereo_mode=static_cast<starfox::render::StereoOutput>(mode);
@@ -6506,6 +6625,7 @@ int main(int argc, char** argv) {
                 game.planet_select_cheat(),
                 game.stereo_separation_x100(),
                 game.stereo_convergence(),
+                game.stereo_crosshair_depth(),
             };
         };
         {
@@ -6673,6 +6793,10 @@ int main(int argc, char** argv) {
             if(const auto* stereo_convergence=std::getenv("STARFOX_TEST_STEREO_CONVERGENCE"))
                 game.set_stereo_convergence(static_cast<std::uint16_t>(
                     std::clamp(std::atoi(stereo_convergence), 1, 65535)));
+            game.set_stereo_crosshair_depth(saved_pregame.stereo_crosshair_depth);
+            if(const auto* crosshair_depth=std::getenv("STARFOX_TEST_STEREO_CROSSHAIR_DEPTH"))
+                game.set_stereo_crosshair_depth(static_cast<std::uint16_t>(
+                    std::clamp(std::atoi(crosshair_depth), 0, 65535)));
             if (const auto* ray_tracing = std::getenv("STARFOX_TEST_RAY_TRACING"))
                 game.set_ray_tracing(std::atoi(ray_tracing) != 0);
             if (const auto* reflection = std::getenv("STARFOX_TEST_REFLECTIVE_SURFACES"))
@@ -9372,12 +9496,26 @@ int main(int argc, char** argv) {
                     <<") displayed=("<<background_x<<','<<background_y<<") origin="
                     <<(menu_landscape_origin?int(*menu_landscape_origin):-1)<<'\n';
             }
+            std::array<std::uint8_t,544> reticle_oam{};
+            StereoReticleOverlay reticle;
             if (game.flow_state()
                     == starfox::simulation::GameFlowState::gameplay
                 || game.flow_state()
                     == starfox::simulation::GameFlowState::training) {
                 starfox::render::interpolate_crosshair_oam(
                     previous_oam, interpolation_alpha, ppu);
+                // With a stereo reticle depth, the base frame keeps the
+                // reticle out and present_stereo re-stamps it per eye at that
+                // depth; without it the reticle stays at screen depth as
+                // before.
+                if(game.stereo_output()!=0U && game.stereo_crosshair_depth()>0U
+                    && window.native_gpu_enabled()) {
+                    reticle.ppu=&ppu;
+                    reticle.oam=&reticle_oam;
+                    reticle.depth=int(game.stereo_crosshair_depth());
+                    reticle.origin=viewport_origin;
+                    starfox::render::suppress_crosshair_oam(ppu);
+                }
             } else {
                 starfox::render::suppress_crosshair_oam(ppu);
             }
@@ -13228,7 +13366,8 @@ constexpr bool mobile_buttons=TouchControls::enabled;
             const bool stereo_presented=resident_raster && record_models && game.stereo_output()!=0U
                 && window.present_stereo(recorded_scene,framebuffer,palette,circle,presentation_effects,
                     raster_commands,superfx_frame.draw_scale(),resident_layer,game.stereo_output(),
-                    game.stereo_separation(),game.stereo_convergence(),planar_frontend_depth(game));
+                    game.stereo_separation(),game.stereo_convergence(),planar_frontend_depth(game),
+                    reticle);
             bool temporal_presented=false;
             if(!stereo_presented && resident_raster) {
                 const bool replay=record_models && game.stereo_output()!=0U

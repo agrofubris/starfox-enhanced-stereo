@@ -404,6 +404,15 @@ public:
     void set_stereo_convergence(std::uint16_t value) noexcept {
         stereo_convergence_ = value ? value : std::uint16_t{512U};
     }
+    // Depth of the first-person reticle in source world units; zero keeps it
+    // on the screen plane. Same scale and config key as the reference build
+    // (STEREO_CROSSHAIR_DEPTH).
+    [[nodiscard]] std::uint16_t stereo_crosshair_depth() const noexcept {
+        return stereo_crosshair_depth_;
+    }
+    void set_stereo_crosshair_depth(std::uint16_t value) noexcept {
+        stereo_crosshair_depth_ = value;
+    }
     void set_selected_level(std::uint8_t value);
     [[nodiscard]] std::vector<std::uint8_t> selectable_levels() const;
     [[nodiscard]] std::string selected_level_name() const;
@@ -1215,6 +1224,7 @@ private:
     std::uint8_t stereo_output_{};
     std::uint16_t stereo_separation_x100_{640U}; // 6.4 source world units.
     std::uint16_t stereo_convergence_{512U};
+    std::uint16_t stereo_crosshair_depth_{}; // 0 = reticle on the screen plane.
     bool default_laser_pending_{true};
     std::uint8_t chromatic_aberration_{};
     std::uint8_t hdr_effect_{};

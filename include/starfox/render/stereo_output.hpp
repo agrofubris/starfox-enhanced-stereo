@@ -114,4 +114,19 @@ inline std::int32_t stereo_planar_parallax_px(
         stereo_source_focal * (separation * .5) / convergence));
     return eye ? magnitude : -magnitude;
 }
+// Per-eye screen-space offset for a flat layer placed at a finite `depth`
+// (source world units, the same scale as convergence). Zero parallax at the
+// convergence plane, approaching stereo_planar_parallax_px as depth grows;
+// negative depths or zero/negative eye counts are rejected. Positive values
+// move the layer right on screen.
+inline std::int32_t stereo_layer_shift_px(unsigned eye, double separation,
+    double convergence, double depth) noexcept {
+    if (eye > 1U || !std::isfinite(separation) || separation <= 0
+        || !std::isfinite(convergence) || convergence <= 0
+        || !std::isfinite(depth) || depth <= 0) return 0;
+    const auto magnitude = static_cast<std::int32_t>(std::lround(
+        stereo_source_focal * (separation * .5)
+            * (1.0 / convergence - 1.0 / depth)));
+    return eye ? magnitude : -magnitude;
+}
 }

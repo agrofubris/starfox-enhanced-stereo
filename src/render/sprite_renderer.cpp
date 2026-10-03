@@ -170,6 +170,50 @@ void suppress_crosshair_oam(simulation::SnesPpuState& ppu) noexcept {
     }
 }
 
+std::optional<CrosshairPlacement> crosshair_placement(
+    const std::array<std::uint8_t, 544>& oam) noexcept {
+    const auto group = find_crosshair_oam_group(oam);
+    if (!group) return std::nullopt;
+    return CrosshairPlacement{group->centre_x, group->centre_y};
+}
+
+bool SpriteRenderer::draw_crosshair(
+    const simulation::SnesPpuState& ppu,
+    const std::array<std::uint8_t, 544>& oam,
+    Framebuffer& target,
+    std::int32_t offset_x,
+    std::int32_t horizontal_origin) const noexcept {
+    const auto group = find_crosshair_oam_group(oam);
+    if (!group) return false;
+    // Rebuild the sprite pass around the reticle alone: hide every other
+    // object, shift the four quadrants, and reuse the normal draw path so
+    // flip bits, priority and palette handling stay identical.
+    auto scratch = ppu;
+    std::fill(scratch.oam.begin(), scratch.oam.end(), 0U);
+    for (std::size_t quadrant = 0U; quadrant < 4U; ++quadrant) {
+        const auto object = group->first_object + quadrant;
+        const auto low = object * 4U;
+        std::copy_n(oam.begin() + static_cast<std::ptrdiff_t>(low), 4U,
+            scratch.oam.begin() + static_cast<std::ptrdiff_t>(low));
+        const auto high = 512U + object / 4U;
+        const auto shift = static_cast<unsigned>((object & 3U) * 2U);
+        scratch.oam[high] = static_cast<std::uint8_t>(
+            (scratch.oam[high] & ~(0x03U << shift))
+            | (oam[high] & (0x03U << shift)));
+    }
+    constexpr std::array<std::int32_t, 4> x_offsets{-8, 8, -8, 8};
+    constexpr std::array<std::int32_t, 4> y_offsets{-8, -8, 8, 8};
+    for (std::size_t quadrant = 0U; quadrant < 4U; ++quadrant) {
+        const auto object = group->first_object + quadrant;
+        set_object_position(scratch.oam, object,
+            group->centre_x + offset_x + x_offsets[quadrant],
+            group->centre_y + y_offsets[quadrant]);
+    }
+    draw_objects(scratch, target, std::nullopt, horizontal_origin, true,
+        false, nullptr, false, nullptr);
+    return true;
+}
+
 void SpriteRenderer::draw_objects(
     const simulation::SnesPpuState& ppu,
     Framebuffer& target,

@@ -71,6 +71,11 @@ public:
     void end_write_coverage() noexcept {track_coverage_=false;}
     [[nodiscard]] bool tracks_write_coverage() const noexcept {return track_coverage_;}
     [[nodiscard]] std::span<const std::uint8_t> write_coverage() const noexcept {return coverage_;}
+    // Mirrors the mutable pixels() accessor for region save/restore.
+    [[nodiscard]] std::vector<std::uint8_t>& coverage() noexcept {
+        if(coverage_.size()!=pixels_.size()) coverage_.assign(pixels_.size(),0U);
+        return coverage_;
+    }
     // Bulk pixel writers must mark coverage too; colour comparison cannot
     // detect black or same-colour foreground writes.
     void mark_written(std::size_t first,std::size_t count=1) noexcept {

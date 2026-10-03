@@ -289,6 +289,25 @@ int main() {
     require(stereo_planar_parallax_px(0,0,512) == 0);
     require(stereo_planar_parallax_px(0,6.4,-1) == 0);
     require(stereo_planar_parallax_px(1,6.4,4096) == 0);
+    // Finite-depth flat layers (the stereo reticle): zero parallax exactly at
+    // the convergence plane, approaching the infinity parallax with distance,
+    // mirrored per eye, and in front of the plane when depth < convergence.
+    require(stereo_layer_shift_px(0,6.4,512,512) == 0);
+    require(stereo_layer_shift_px(1,6.4,512,512) == 0);
+    require(stereo_layer_shift_px(0,6.4,512,1000000)
+        == -stereo_planar_parallax_px(1,6.4,512));
+    require(stereo_layer_shift_px(1,6.4,512,1000000)
+        == stereo_planar_parallax_px(1,6.4,512));
+    require(stereo_layer_shift_px(0,6.4,512,256) > 0);
+    require(stereo_layer_shift_px(1,6.4,512,256) < 0);
+    require(stereo_layer_shift_px(1,34.0,208,2048)
+        == -stereo_layer_shift_px(0,34.0,208,2048));
+    require(stereo_layer_shift_px(2,6.4,512,2048) == 0);
+    require(stereo_layer_shift_px(0,6.4,512,0) == 0);
+    require(stereo_layer_shift_px(0,0,512,2048) == 0);
+    require(stereo_layer_shift_px(0,6.4,-1,2048) == 0);
+    require(stereo_layer_shift_px(0,6.4,512,
+        std::numeric_limits<double>::infinity()) == 0);
     {
         // Frontend/menu frames anchor models on the far plane: no camera
         // translation, only the vanishing-point shift, so a close model cannot

@@ -31,6 +31,12 @@ void interpolate_crosshair_oam(
 // other cartridge sprites.
 void suppress_crosshair_oam(simulation::SnesPpuState& ppu) noexcept;
 
+// The reticle centre in source screen pixels, when a complete tile-$61 group
+// is present. Used to bound the region a re-stamped reticle touches.
+struct CrosshairPlacement { std::int32_t centre_x{}, centre_y{}; };
+[[nodiscard]] std::optional<CrosshairPlacement> crosshair_placement(
+    const std::array<std::uint8_t, 544>& oam) noexcept;
+
 class SpriteRenderer {
 public:
     // Retail MSHOWPERCGRAPH: 104x12 frame, 100x8 maximum fill.
@@ -50,6 +56,15 @@ public:
         Framebuffer& target,
         bool anchor_to_edges = false,
         const HudLayout* hud_layout = nullptr) const noexcept;
+    // Draw only the four tile-$61 reticle quadrants, centred horizontally at
+    // their captured position + offset_x. Stereo output uses this to place the
+    // reticle at a chosen depth per eye. False when no group is present.
+    bool draw_crosshair(
+        const simulation::SnesPpuState& ppu,
+        const std::array<std::uint8_t, 544>& oam,
+        Framebuffer& target,
+        std::int32_t offset_x,
+        std::int32_t horizontal_origin = 0) const noexcept;
 };
 
 } // namespace starfox::render

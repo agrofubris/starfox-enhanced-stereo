@@ -198,6 +198,9 @@ struct PregameSettings {
     // existing positional aggregate initializers keep their meaning.
     std::uint16_t stereo_separation_x100{640U};
     std::uint16_t stereo_convergence{512U};
+    // First-person reticle depth in source world units; 0 keeps it on the
+    // screen plane. Same key as the reference build (STEREO_CROSSHAIR_DEPTH).
+    std::uint16_t stereo_crosshair_depth{};
 
     [[nodiscard]] bool operator==(const PregameSettings&) const = default;
 };

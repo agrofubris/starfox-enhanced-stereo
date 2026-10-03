@@ -872,6 +872,10 @@ bool load_pregame_settings(
         } else if (name == "STEREO_CONVERGENCE") {
             if (value < 1 || value > 65535) return false;
             loaded.stereo_convergence = static_cast<std::uint16_t>(value);
+        } else if (name == "STEREO_CROSSHAIR_DEPTH") {
+            // 0 keeps the reticle on the screen plane.
+            if (value < 0 || value > 65535) return false;
+            loaded.stereo_crosshair_depth = static_cast<std::uint16_t>(value);
         } else if (name == "SELECTED_LEVEL") {
             if (value != 0 && (value < 11 || value > 79 || value % 10 == 0)) return false;
             loaded.selected_level = static_cast<std::uint8_t>(value);
@@ -1084,6 +1088,8 @@ bool save_pregame_settings(
            << static_cast<unsigned>(settings.stereo_separation_x100) << '\n'
            << "STEREO_CONVERGENCE "
            << static_cast<unsigned>(settings.stereo_convergence) << '\n'
+           << "STEREO_CROSSHAIR_DEPTH "
+           << static_cast<unsigned>(settings.stereo_crosshair_depth) << '\n'
            << "VSYNC " << static_cast<unsigned>(settings.vsync) << '\n'
            << "RENDERER_MODE "
            << static_cast<unsigned>(settings.renderer_mode) << '\n'

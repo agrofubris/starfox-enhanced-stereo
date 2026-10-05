@@ -54,6 +54,8 @@ download, requirements and test notes.
   patch follows.
 - **bo3b** — [SR-lib](https://github.com/bo3b/SR-lib), the Simulated Reality
   wrapper used for the optional D3D12 weave.
+- **masterotaku** — SR-panel testing and feedback (Leia SR verification,
+  separation/reflection and reticle reports).
 - **Nintendo** and **Argonaut Software** — original Star Fox / Starwing.
 - **UltraStarFox** and **Star Fox EX** contributors.
 

@@ -1337,10 +1337,25 @@ GameTickResult GameSimulation::tick_pregame_menu(
         if (pregame_selection_ == 10U
             && (menu_input.pressed & (starfox::input::left | starfox::input::right
                 | starfox::input::select | starfox::input::a)) != 0U) {
-            // 64 source world units per step; 0 keeps the reticle on screen.
-            const auto delta = (menu_input.pressed & starfox::input::left) ? -64 : 64;
-            set_stereo_crosshair_depth(static_cast<std::uint16_t>(
-                std::clamp(int(stereo_crosshair_depth_) + delta, 0, 65535)));
+            // 100 source world units per step; 0 keeps the reticle on screen.
+            // The game probes its aim 500 units ahead of the ship (GETVIEW_L),
+            // so enabling starts at that aim distance. One step left of OFF is
+            // AUTO, which follows the live aim-probe depth; manual values stay
+            // below the sentinel.
+            const bool left = (menu_input.pressed & starfox::input::left) != 0U;
+            const int current = int(stereo_crosshair_depth_);
+            const int automatic = int(stereo_crosshair_depth_auto);
+            int next = current;
+            if (!left && current == 0) {
+                next = 500;
+            } else if (left && current == 0) {
+                next = automatic;
+            } else if (!left && current == automatic) {
+                next = 0;
+            } else if (current != automatic) {
+                next = std::clamp(current + (left ? -100 : 100), 0, 65000);
+            }
+            set_stereo_crosshair_depth(static_cast<std::uint16_t>(next));
             queue_sound_effect(0x11U);
         }
         if (pregame_selection_ == 12U
@@ -5358,6 +5373,7 @@ void GameSimulation::calculate_view() {
             project_displacement(relative[0], relative[2])));
         map_.write_native_word(crosshair_y_, static_cast<std::uint16_t>(
             project_displacement(relative[1], relative[2])));
+        if (relative[2] > 0) aim_probe_depth_ = relative[2];
     }
 }
 
@@ -5385,6 +5401,15 @@ std::size_t GameSimulation::update_view_flags_and_cull() {
     };
     std::vector<DrawEntry> ordered;
     std::vector<ObjectHandle> removals;
+    // AUTO reticle target scan: the nearest object whose projected bounding
+    // circle covers the crosshair, in the same displacement space the source
+    // uses for ARSEBANDX/Y.
+    const auto crosshair_x = signed_word(map_.read_native_word(crosshair_x_));
+    const auto crosshair_y = signed_word(map_.read_native_word(crosshair_y_));
+    std::int32_t aim_target_depth = 0;
+    std::int32_t aim_target_radius = 0;
+    std::int64_t aim_target_distance = 0;
+    ObjectHandle aim_target_handle = 0;
     for (const auto handle : objects_.active_handles()) {
         auto& object = objects_.at(handle);
         // showview jumps over invisible objects before touching their cached
@@ -5428,6 +5453,40 @@ std::size_t GameSimulation::update_view_flags_and_cull() {
         if (add16(position[2], z_max) >= 0) {
             object.flags |= front_and_in_view;
             if (position[0] < 0) object.flags |= left_of_view;
+            if (handle != player_ && position[2] > 0) {
+                const auto shape_address = static_cast<std::uint32_t>(object.shape);
+                const auto x_max = std::abs(std::int32_t(
+                    rom_->read_i16(shape_address + 10U)));
+                const auto y_max = std::abs(std::int32_t(
+                    rom_->read_i16(shape_address + 12U)));
+                const auto depth = std::max<std::int32_t>(position[2], 1);
+                const auto dx = std::abs(std::int64_t(crosshair_x)
+                    - std::int64_t(position[0]) * 256 / depth);
+                const auto dy = std::abs(std::int64_t(crosshair_y)
+                    - std::int64_t(position[1]) * 256 / depth);
+                const auto projected_x = std::int64_t(x_max) * 256 / depth;
+                const auto projected_y = std::int64_t(y_max) * 256 / depth;
+                const auto distance = dx * dx + dy * dy;
+                // Skip specks (shots and shards) so the reticle never dives
+                // into debris, and keep the current target while it is still
+                // under the crosshair so overlapping objects cannot flip it.
+                const bool covered = dx <= projected_x + 8
+                    && dy <= projected_y + 8
+                    && projected_x >= 6 && projected_y >= 6;
+                if (covered && handle == aim_target_handle_) {
+                    aim_target_depth = depth;
+                    aim_target_radius = std::max(x_max, y_max);
+                    aim_target_distance = distance;
+                } else if (covered
+                    && (aim_target_depth == 0 || depth < aim_target_depth
+                        || (depth == aim_target_depth
+                            && distance < aim_target_distance))) {
+                    aim_target_depth = depth;
+                    aim_target_radius = std::max(x_max, y_max);
+                    aim_target_distance = distance;
+                    aim_target_handle = handle;
+                }
+            }
             continue;
         }
         if ((map_.read_native_byte(game_flags_) & 0x01U) != 0U
@@ -5437,6 +5496,10 @@ std::size_t GameSimulation::update_view_flags_and_cull() {
         }
         removals.push_back(handle);
     }
+
+    aim_target_depth_ = aim_target_depth;
+    aim_target_radius_ = aim_target_radius;
+    aim_target_handle_ = aim_target_handle;
 
     draw_order_.clear();
     draw_order_.reserve(ordered.size());

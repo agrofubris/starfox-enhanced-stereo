@@ -421,7 +421,7 @@ void restore_framebuffer_region(starfox::render::Framebuffer& frame,
             std::copy_n(region.tags.data()+offset,std::size_t(region.width),
                 frame.layer_tags().data()+target);
         if(region.has_coverage) {
-            auto coverage=frame.coverage();
+            auto& coverage=frame.coverage();
             if(coverage.size()==frame.pixels().size())
                 std::copy_n(region.coverage.data()+offset,std::size_t(region.width),
                     coverage.data()+target);
@@ -6487,6 +6487,12 @@ int main(int argc, char** argv) {
         starfox::input::InputLatch input;
         bool launch_menu_preview = std::getenv("STARFOX_TEST_MENU_PREVIEW") != nullptr;
         bool launch_game_after_preview = false;
+        // Dev/test hook: launch straight into a stage (for example LEVEL1_2)
+        // instead of the setup menu. Used by the stage-2 stereo launcher.
+        const std::string test_direct_stage = [] {
+            const auto* value = std::getenv("STARFOX_TEST_DIRECT_STAGE");
+            return value ? std::string{value} : std::string{};
+        }();
 #if defined(__ANDROID__) && !defined(NDEBUG)
         // ADB profiling enters gameplay without navigating or rendering the
         // setup menu. This property is inert in release builds.
@@ -6507,6 +6513,7 @@ int main(int argc, char** argv) {
         if (launch_hud_editor_preview || launch_touch_editor_preview || launch_menu_preview) {
             initial_map = "LEVEL1_1";
         }
+        if (!test_direct_stage.empty()) initial_map = test_direct_stage;
         if (std::getenv("STARFOX_TEST_FRAMES") && std::getenv("STARFOX_TEST_EX_MENU_BACKGROUND"))
             initial_map = "TITLEMAP";
         while (restart_runtime) {
@@ -7877,6 +7884,9 @@ int main(int argc, char** argv) {
         std::optional<bool> volume_slider_drag_music;
         bool suppress_fullscreen_start{};
         double last_phase_fraction{};
+        // AUTO reticle depth glides between the aimed object and the fallback
+        // plane instead of snapping, in source world units.
+        double auto_reticle_depth{};
         std::uint8_t state_slot{};
         bool state_slot_window{};
         bool suppress_state_input{};
@@ -9512,10 +9522,53 @@ int main(int argc, char** argv) {
                     && window.native_gpu_enabled()) {
                     // Capture the interpolated group before suppression: the
                     // re-stamp path finds it in this copy, not in the frame.
+                    // AUTO follows the object under the crosshair so the
+                    // reticle sits on the target; with an empty aim ray it
+                    // follows the sim's live aim-probe depth, then falls back
+                    // to the 500-unit aim distance.
+                    int reticle_depth=int(game.stereo_crosshair_depth());
+                    if(game.stereo_crosshair_depth()
+                        ==starfox::simulation::stereo_crosshair_depth_auto) {
+                        const int target_depth=int(game.aim_target_depth());
+                        int desired_depth=target_depth;
+                        if(desired_depth<=0) desired_depth=int(game.aim_probe_depth());
+                        if(desired_depth<=0) desired_depth=500;
+                        // Keep the reticle's pop within the same parallax
+                        // budget as the far backdrop: an object passing the
+                        // ship can sit at depth 20, and its true parallax
+                        // would split the reticle into two unfusable copies.
+                        // Half the convergence caps the outward shift at the
+                        // planar parallax. Any depth on the aim ray is
+                        // geometrically correct, so clamping keeps it aimed.
+                        desired_depth=std::max(desired_depth,
+                            std::max(1,int(game.stereo_convergence())/2));
+                        // Glide: acquire a target quickly, drift back to the
+                        // fallback plane slowly so losing the ray never snaps.
+                        const auto fps=std::max<std::uint16_t>(1U,game.presentation_fps());
+                        const auto rate=std::clamp(
+                            (target_depth>0?14.0:6.0)/double(fps),0.02,1.0);
+                        if(auto_reticle_depth<=0.0)
+                            auto_reticle_depth=double(desired_depth);
+                        auto_reticle_depth+=(double(desired_depth)
+                            -auto_reticle_depth)*rate;
+                        reticle_depth=std::max(1,
+                            int(std::lround(auto_reticle_depth)));
+                        if(std::getenv("STARFOX_TRACE_AIM_TARGET")) {
+                            static int last_reticle_depth=-1;
+                            if(reticle_depth!=last_reticle_depth) {
+                                last_reticle_depth=reticle_depth;
+                                std::cerr<<"aim-target-depth="<<reticle_depth
+                                    <<" desired="<<desired_depth
+                                    <<" target="<<game.aim_target_depth()
+                                    <<" radius="<<game.aim_target_radius()
+                                    <<" probe="<<game.aim_probe_depth()<<'\n';
+                            }
+                        }
+                    }
                     reticle_oam=ppu.oam;
                     reticle.ppu=&ppu;
                     reticle.oam=&reticle_oam;
-                    reticle.depth=int(game.stereo_crosshair_depth());
+                    reticle.depth=reticle_depth;
                     reticle.origin=viewport_origin;
                     starfox::render::suppress_crosshair_oam(ppu);
                 }
@@ -12742,6 +12795,9 @@ constexpr bool mobile_buttons=TouchControls::enabled;
                         const auto reticle_depth_value =
                             game.stereo_crosshair_depth()==0U
                                 ? std::string{"OFF"}
+                                : game.stereo_crosshair_depth()
+                                    ==starfox::simulation::stereo_crosshair_depth_auto
+                                ? std::string{"AUTO"}
                                 : std::to_string(game.stereo_crosshair_depth());
                         draw_row("3D RETICLE DEPTH", reticle_depth_value, row_y(61,61),
                             game.pregame_selection() == 10U);

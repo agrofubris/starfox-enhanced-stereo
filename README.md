@@ -18,12 +18,16 @@ simulation and gameplay are unchanged.
 Interlaced, Row Interlaced Reversed and Leia SR.
 
 - **3D SEPARATION** and **3D CONVERGENCE** rows in Options, saved between runs.
+- **3D RETICLE DEPTH** row for the space-stage crosshair: `OFF` (screen depth),
+  the true 3D aim point (500 world units) with 100-unit steps, or `AUTO` to
+  track the object under the crosshair. Saved as `STEREO_CROSSHAIR_DEPTH`.
 - Flat assets that are not part of the 3D scene — HUD, menus, dialogue and
   screen wipes — stay at screen depth, so close models cannot push the UI out
   of comfort.
 - **Leia SR** uses the Simulated Reality weaver and eye tracking on the D3D12
   backend; without the SR Platform or an SR display it falls back to Full SBS
-  automatically, with no missing-DLL popups.
+  automatically, with no missing-DLL popups. Verified on an SR panel
+  (2026-10-05): 120 fps at 120 Hz at 3x render scale, full resolution per eye.
 - Works with the port's display modes and render scales.
 
 A developer reference for the Leia SR integration — architecture, per-frame

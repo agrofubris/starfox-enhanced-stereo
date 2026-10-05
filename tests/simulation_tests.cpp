@@ -7323,6 +7323,33 @@ int main(int argc, char** argv) {
         drive_boot({0, starfox::input::a, 0});
         require(boot_game.stereo_output()==1U,"Stereo confirmation did not select Half SBS");
         boot_game.set_stereo_output(0);
+        select_menu_action(boot_game, starfox::simulation::PregamePage::options, 10U, &boot_audio);
+        require(boot_game.stereo_crosshair_depth() == 0U,
+            "3D reticle depth did not default OFF");
+        drive_boot({0, starfox::input::right, 0});
+        require(boot_game.stereo_crosshair_depth() == 500U,
+            "enabling the 3D reticle did not start at the 500-unit aim probe");
+        drive_boot({0, starfox::input::right, 0});
+        require(boot_game.stereo_crosshair_depth() == 600U,
+            "3D reticle depth did not step up by 100");
+        drive_boot({0, starfox::input::left, 0});
+        require(boot_game.stereo_crosshair_depth() == 500U,
+            "3D reticle depth did not step down by 100");
+        drive_boot({0, starfox::input::left, 0});
+        require(boot_game.stereo_crosshair_depth() == 400U,
+            "3D reticle depth did not step below the aim probe");
+        for (unsigned i = 0; i < 4; ++i)
+            drive_boot({0, starfox::input::left, 0});
+        require(boot_game.stereo_crosshair_depth() == 0U,
+            "3D reticle depth did not return to OFF");
+        drive_boot({0, starfox::input::left, 0});
+        require(boot_game.stereo_crosshair_depth()
+                == starfox::simulation::stereo_crosshair_depth_auto,
+            "3D reticle depth did not select AUTO below OFF");
+        drive_boot({0, starfox::input::right, 0});
+        require(boot_game.stereo_crosshair_depth() == 0U,
+            "AUTO did not return to OFF");
+        boot_game.set_stereo_crosshair_depth(0);
         select_menu_action(boot_game, starfox::simulation::PregamePage::options, 12U, &boot_audio);
         boot_game.set_language(0);
         drive_boot({0, starfox::input::left, 0});

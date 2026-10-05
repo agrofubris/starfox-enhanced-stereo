@@ -82,6 +82,10 @@ enum class RenderScale : std::uint8_t {
 
 inline constexpr std::size_t render_scale_count = 4U;
 
+// Sentinel value for stereo_crosshair_depth(): the reticle follows the live
+// aim-probe depth so it always marks the true 3D aim point.
+inline constexpr std::uint16_t stereo_crosshair_depth_auto = 65535U;
+
 enum class PregamePage {
     main,
     options,
@@ -405,13 +409,30 @@ public:
         stereo_convergence_ = value ? value : std::uint16_t{512U};
     }
     // Depth of the first-person reticle in source world units; zero keeps it
-    // on the screen plane. Same scale and config key as the reference build
+    // on the screen plane, stereo_crosshair_depth_auto follows the aim probe.
+    // Same scale and config key as the reference build
     // (STEREO_CROSSHAIR_DEPTH).
     [[nodiscard]] std::uint16_t stereo_crosshair_depth() const noexcept {
         return stereo_crosshair_depth_;
     }
     void set_stereo_crosshair_depth(std::uint16_t value) noexcept {
         stereo_crosshair_depth_ = value;
+    }
+    // Camera-space depth of the aim probe, the point 500 world units ahead of
+    // the ship that feeds DO_CROSSHAIR (GETVIEW_L). Zero until the player is
+    // active. AUTO reticle fallback.
+    [[nodiscard]] std::int32_t aim_probe_depth() const noexcept {
+        return aim_probe_depth_;
+    }
+    // Camera-space depth of the nearest object whose projected bounding
+    // circle contains the crosshair, or zero when the aim ray is empty.
+    // AUTO reticle primary source, so the reticle sits on the target.
+    [[nodiscard]] std::int32_t aim_target_depth() const noexcept {
+        return aim_target_depth_;
+    }
+    // Shape-header bounding radius of that target, zero with no target.
+    [[nodiscard]] std::int32_t aim_target_radius() const noexcept {
+        return aim_target_radius_;
     }
     void set_selected_level(std::uint8_t value);
     [[nodiscard]] std::vector<std::uint8_t> selectable_levels() const;
@@ -1225,6 +1246,10 @@ private:
     std::uint16_t stereo_separation_x100_{640U}; // 6.4 source world units.
     std::uint16_t stereo_convergence_{512U};
     std::uint16_t stereo_crosshair_depth_{}; // 0 = reticle on the screen plane.
+    std::int32_t aim_probe_depth_{}; // Camera-space aim depth, see aim_probe_depth().
+    std::int32_t aim_target_depth_{}; // Nearest crosshair object, see aim_target_depth().
+    std::int32_t aim_target_radius_{}; // Bounding radius of that object.
+    ObjectHandle aim_target_handle_{}; // Sticky target, kept while still under the crosshair.
     bool default_laser_pending_{true};
     std::uint8_t chromatic_aberration_{};
     std::uint8_t hdr_effect_{};

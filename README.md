@@ -26,6 +26,10 @@ Interlaced, Row Interlaced Reversed and Leia SR.
   automatically, with no missing-DLL popups.
 - Works with the port's display modes and render scales.
 
+A developer reference for the Leia SR integration — architecture, per-frame
+flow, failure paths and the traps that cost debugging sessions — is in
+[`docs/Leia-SR-Implementation.md`](docs/Leia-SR-Implementation.md).
+
 ### Install
 
 1. Download the official Star Fox Enhanced 0.0.8 release and extract it into a
@@ -42,7 +46,9 @@ download, requirements and test notes.
 ### Credits
 
 - **kandowontu2** and contributors — the Star Fox Enhanced port this patch
-  builds on (<https://github.com/kandowontu2/starfox-enhanced>).
+  builds on (<https://github.com/kandowontu2/starfox-enhanced>), including the
+  official-port Leia SR refinement (optional loader DLL, `SR PLATFORM`
+  output).
 - **oneup03** — RT64 3D work
   (<https://github.com/oneup03/rt64-3D>), whose Leia SR implementation this
   patch follows.

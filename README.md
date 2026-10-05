@@ -30,10 +30,6 @@ Interlaced, Row Interlaced Reversed and Leia SR.
   (2026-10-05): 120 fps at 120 Hz at 3x render scale, full resolution per eye.
 - Works with the port's display modes and render scales.
 
-A developer reference for the Leia SR integration — architecture, per-frame
-flow, failure paths and the traps that cost debugging sessions — is in
-[`docs/Leia-SR-Implementation.md`](docs/Leia-SR-Implementation.md).
-
 ### Install
 
 1. Download the official Star Fox Enhanced 0.0.8 release and extract it into a

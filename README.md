@@ -17,10 +17,6 @@ simulation and gameplay are unchanged.
 **Eight 3D modes:** Half SBS, Full SBS, Half TaB, Full TaB, Crossview, Row
 Interlaced, Row Interlaced Reversed and Leia SR.
 
-- **3D SEPARATION** and **3D CONVERGENCE** rows in Options, saved between runs.
-- **3D RETICLE DEPTH** row for the space-stage crosshair: `OFF` (screen depth),
-  the true 3D aim point (500 world units) with 100-unit steps, or `AUTO` to
-  track the object under the crosshair. Saved as `STEREO_CROSSHAIR_DEPTH`.
 - Flat assets that are not part of the 3D scene — HUD, menus, dialogue and
   screen wipes — stay at screen depth, so close models cannot push the UI out
   of comfort.
@@ -37,8 +33,7 @@ Interlaced, Row Interlaced Reversed and Leia SR.
 2. Back up its `starfox_pc.exe`, then replace it with the mod's executable.
 3. Put your own supported Star Fox ROM (`.sfc`/`.smc`) beside it and launch.
    The first run validates the ROM and builds `Starfox-Assets.BIN` locally.
-4. Open Options → 3D OUTPUT, select the mode your display uses, then tune
-   3D SEPARATION and 3D CONVERGENCE.
+4. Open Options → 3D OUTPUT and select the mode your display uses.
 
 No ROM, game assets or saves are distributed. The release page carries the
 download, requirements and test notes.

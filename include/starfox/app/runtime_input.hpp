@@ -201,6 +201,9 @@ struct PregameSettings {
     // First-person reticle depth in source world units; 0 keeps it on the
     // screen plane. Same key as the reference build (STEREO_CROSSHAIR_DEPTH).
     std::uint16_t stereo_crosshair_depth{};
+    // SDL GPU backend request: 0=AUTO, 1=DIRECT3D12, 2=VULKAN. Appended last
+    // so existing positional aggregate initializers keep their meaning.
+    std::uint8_t gpu_backend{};
 
     [[nodiscard]] bool operator==(const PregameSettings&) const = default;
 };

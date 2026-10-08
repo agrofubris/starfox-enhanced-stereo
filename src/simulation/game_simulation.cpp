@@ -1507,6 +1507,19 @@ GameTickResult GameSimulation::tick_pregame_menu(
         queue_sound_effect(0x11U);
     }
 
+    const auto change_gpu_backend = pregame_selection_ == 25U
+        && (menu_input.pressed & (starfox::input::left
+            | starfox::input::right | starfox::input::select
+            | starfox::input::a | starfox::input::b)) != 0U;
+    if (change_gpu_backend) {
+        const auto current = static_cast<std::uint8_t>(gpu_backend_);
+        gpu_backend_ = static_cast<GpuBackend>(
+            (menu_input.pressed & starfox::input::left) != 0U
+                ? static_cast<std::uint8_t>((current + 2U) % 3U)
+                : static_cast<std::uint8_t>((current + 1U) % 3U));
+        queue_sound_effect(0x11U);
+    }
+
     const auto toggle_render_option =
         (menu_input.pressed & (starfox::input::left | starfox::input::right
             | starfox::input::select | starfox::input::a

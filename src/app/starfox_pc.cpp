@@ -1670,7 +1670,11 @@ class Window {
 public:
     explicit Window(starfox::simulation::RendererMode renderer_mode,
         DlssHost* dlss=nullptr, bool start_fullscreen=false,
-        bool start_leia_sr=false):dlss_(dlss),leia_sr_requested_(start_leia_sr) {
+        bool start_leia_sr=false,
+        starfox::simulation::GpuBackend gpu_backend=
+            starfox::simulation::GpuBackend::automatic)
+        :dlss_(dlss),leia_sr_requested_(start_leia_sr) {
+        gpu_backend_=gpu_backend;
         if (const auto* override = std::getenv("STARFOX_PRESENT_WORKERS")) {
             const auto count = std::atoi(override);
             if (count >= 1 && count <= 8)
@@ -3858,6 +3862,7 @@ public:
 
     void set_render_options(
         starfox::simulation::RendererMode renderer_mode,
+        starfox::simulation::GpuBackend gpu_backend,
         starfox::simulation::AntiAliasingMode anti_aliasing,
         bool enhanced_graphics,
         bool smooth_polys, std::uint8_t rtx_lighting, bool vsync,
@@ -3893,7 +3898,9 @@ public:
         effect_intensity_ = effect_intensity;
         world_effect_ = world_effect;
         world_effect_intensity_ = world_effect_intensity;
-        if (renderer_mode_ != renderer_mode) {
+        const bool gpu_backend_changed = gpu_backend_ != gpu_backend;
+        gpu_backend_ = gpu_backend;
+        if (renderer_mode_ != renderer_mode || gpu_backend_changed) {
             recreate_renderer(renderer_mode);
         }
         anti_aliasing_ = anti_aliasing;
@@ -4130,14 +4137,20 @@ private:
         // while this adapter's Vulkan driver has very slow dense dispatches.
         // DLSS needs D3D12, but merely installing its optional runtime must
         // not change the ordinary OFF-path backend or performance profile.
-        // Explicit backend overrides retain higher priority.
+        // The menu's GPU BACKEND choice is an explicit override; an
+        // environment variable still wins over it because SDL applies env
+        // hints with higher priority. AUTO keeps the adapter defaults below.
         // The Leia SR weaver is D3D12-only, and an explicit request must win
         // over the DLSS non-NVIDIA Vulkan preference: without D3D12 the mode
         // silently degrades to the side-by-side fallback.
-        SDL_SetHintWithPriority(SDL_HINT_GPU_DRIVER,
-            prefer_intel_d3d12_ || leia_sr_requested_
+        const char* gpu_backend_hint=
+            gpu_backend_==starfox::simulation::GpuBackend::direct3d12?"direct3d12"
+            :gpu_backend_==starfox::simulation::GpuBackend::vulkan?"vulkan"
+            :prefer_intel_d3d12_ || leia_sr_requested_
                 || (dlss_ && dlss_->wants_d3d12() && !prefer_vulkan_adapter_)
-                ?"direct3d12":"vulkan", SDL_HINT_DEFAULT);
+                ?"direct3d12":"vulkan";
+        SDL_SetHintWithPriority(SDL_HINT_GPU_DRIVER,gpu_backend_hint,
+            SDL_HINT_DEFAULT);
         const auto* renderer_driver = mode == starfox::simulation::RendererMode::software
             ? "software" : std::string_view(SDL_GetCurrentVideoDriver())=="dummy"?nullptr:
                 std::getenv("STARFOX_TEST_D3D11_GPU")?"direct3d11":"gpu";
@@ -4186,7 +4199,9 @@ private:
                 renderer_=SDL_CreateRendererWithProperties(props);
             }
 #if defined(_WIN32) && !defined(STARFOX_UWP)
-            if(!renderer_ && prefer_intel_d3d12_ && !std::getenv("SDL_GPU_DRIVER")) {
+            if(!renderer_ && prefer_intel_d3d12_
+                && gpu_backend_==starfox::simulation::GpuBackend::automatic
+                && !std::getenv("SDL_GPU_DRIVER")) {
                 // An older Intel driver may lack usable D3D12 support. Keep
                 // its Vulkan path available instead of failing startup.
                 SDL_SetHintWithPriority(SDL_HINT_GPU_DRIVER,"vulkan",SDL_HINT_NORMAL);
@@ -4239,6 +4254,7 @@ private:
             SDL_GetGPUDeviceProperties(static_cast<SDL_GPUDevice*>(effect_device())),"starfox.gpu.vendor_id",0));
 #if defined(_WIN32) && !defined(STARFOX_UWP)
         if(portable_gpu_ && adapter_vendor_==0x8086U && !prefer_intel_d3d12_
+            && gpu_backend_==starfox::simulation::GpuBackend::automatic
             && !std::getenv("SDL_GPU_DRIVER")
             && std::string_view(SDL_GetGPUDeviceDriver(static_cast<SDL_GPUDevice*>(effect_device())))=="vulkan") {
             // Probe Vulkan only long enough to identify the adapter. Recreate
@@ -5162,6 +5178,8 @@ private:
     bool vsync_{};
     starfox::simulation::RendererMode renderer_mode_{
         starfox::simulation::RendererMode::gpu};
+    starfox::simulation::GpuBackend gpu_backend_{
+        starfox::simulation::GpuBackend::automatic};
     bool smooth_layer_ready_{};
     std::uint32_t smooth_source_width_{};
     std::uint32_t smooth_source_height_{};
@@ -6360,7 +6378,9 @@ int main(int argc, char** argv) {
 #endif
         Window window{startup_renderer,&dlss,startup_fullscreen,
             saved_pregame.stereo_output
-                ==static_cast<std::uint8_t>(starfox::render::StereoOutput::leia_sr)};
+                ==static_cast<std::uint8_t>(starfox::render::StereoOutput::leia_sr),
+            static_cast<starfox::simulation::GpuBackend>(
+                std::min<std::uint8_t>(saved_pregame.gpu_backend, 2U))};
         const auto touch_layout_path=starfox::app::touch_layout_settings_path();
         starfox::app::TouchLayoutConfig touch_layout_config{};
         static_cast<void>(starfox::app::load_touch_layout(touch_layout_path,
@@ -6633,6 +6653,7 @@ int main(int argc, char** argv) {
                 game.stereo_separation_x100(),
                 game.stereo_convergence(),
                 game.stereo_crosshair_depth(),
+                static_cast<std::uint8_t>(game.gpu_backend()),
             };
         };
         {
@@ -6804,6 +6825,11 @@ int main(int argc, char** argv) {
             if(const auto* crosshair_depth=std::getenv("STARFOX_TEST_STEREO_CROSSHAIR_DEPTH"))
                 game.set_stereo_crosshair_depth(static_cast<std::uint16_t>(
                     std::clamp(std::atoi(crosshair_depth), 0, 65535)));
+            game.set_gpu_backend(static_cast<starfox::simulation::GpuBackend>(
+                std::min<std::uint8_t>(saved_pregame.gpu_backend, 2U)));
+            if(const auto* gpu_backend=std::getenv("STARFOX_TEST_GPU_BACKEND"))
+                game.set_gpu_backend(static_cast<starfox::simulation::GpuBackend>(
+                    std::clamp(std::atoi(gpu_backend), 0, 2)));
             if (const auto* ray_tracing = std::getenv("STARFOX_TEST_RAY_TRACING"))
                 game.set_ray_tracing(std::atoi(ray_tracing) != 0);
             if (const auto* reflection = std::getenv("STARFOX_TEST_REFLECTIVE_SURFACES"))
@@ -8633,7 +8659,7 @@ int main(int argc, char** argv) {
             guarded_renderer_mode = game.renderer_mode();
             guarded_flow_state = game.flow_state();
 #endif
-            window.set_render_options(game.renderer_mode(),
+            window.set_render_options(game.renderer_mode(), game.gpu_backend(),
                 game.anti_aliasing_mode(),
                 game.enhanced_graphics(), game.smooth_polys(),
                 game.rtx_lighting_intensity(), game.vsync(),
@@ -12984,6 +13010,15 @@ constexpr bool mobile_buttons=TouchControls::enabled;
                                 ? std::string_view{"GPU"}
                                 : std::string_view{"SOFTWARE"},
                             row_y[4], game.pregame_selection() == 4U);
+                        // Explicit SDL GPU backend choice, so a user hitting a
+                        // broken vendor driver (for example Intel's D3D12)
+                        // can switch from the menu instead of env variables.
+                        constexpr std::array<std::string_view,3> gpu_backend_names{
+                            "AUTO", "DIRECT3D 12", "VULKAN"};
+                        draw_graphics_row("GPU BACKEND",
+                            gpu_backend_names[static_cast<std::uint8_t>(
+                                game.gpu_backend())],
+                            row_y[25], game.pregame_selection() == 25U);
                         const auto msu1_value = game.msu1_available()
                             ? on_off(game.msu1_music())
                             : std::string_view{"NOT FOUND"};

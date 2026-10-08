@@ -24,6 +24,9 @@ Interlaced, Row Interlaced Reversed and Leia SR.
   backend; without the SR Platform or an SR display it falls back to Full SBS
   automatically, with no missing-DLL popups. Verified on an SR panel
   (2026-10-05): 120 fps at 120 Hz at 3x render scale, full resolution per eye.
+- **GPU BACKEND** row (`AUTO` / `DIRECT3D 12` / `VULKAN`): overrides the SDL
+  GPU backend from the menu. If the GPU renderer crashes on Intel
+  (`igd12um64xe2.dll`; the official port is affected too), select `VULKAN`.
 - Works with the port's display modes and render scales.
 
 ### Install

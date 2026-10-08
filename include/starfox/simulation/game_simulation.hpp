@@ -71,6 +71,16 @@ enum class RendererMode : std::uint8_t {
     software,
 };
 
+// SDL GPU backend request. AUTO keeps the per-adapter defaults (D3D12 for
+// Intel, DLSS and Leia SR; Vulkan otherwise). The explicit choices override
+// that so a user can dodge a broken vendor backend (e.g. Intel's D3D12
+// driver) from the menu, without environment variables.
+enum class GpuBackend : std::uint8_t {
+    automatic,
+    direct3d12,
+    vulkan,
+};
+
 // Internal supersampling of the host-rendered 3D layer. Cartridge 2D art is
 // unaffected and keeps its source raster.
 enum class RenderScale : std::uint8_t {
@@ -94,8 +104,8 @@ enum class PregamePage {
     cheats,
 };
 
-inline constexpr std::array<std::uint8_t, 12> main_menu_order{
-    0,1,2,3,4,5,6,20,21,14,15,16};
+inline constexpr std::array<std::uint8_t, 13> main_menu_order{
+    0,1,2,3,4,25,5,6,20,21,14,15,16};
 inline constexpr std::array<std::uint8_t, 11> two_d_menu_order{8,18,36,37,38,39,40,41,13,24,23};
 inline constexpr std::array<std::uint8_t, 17> three_d_menu_order{7,11,9,30,17,19,10,28,29,32,27,12,22,35,33,34,23};
 inline constexpr std::array<std::uint8_t, 18> neural_three_d_menu_order{7,11,9,30,31,17,19,10,28,29,32,27,12,22,35,33,34,23};
@@ -550,6 +560,12 @@ public:
     }
     void set_renderer_mode(RendererMode mode) noexcept {
         renderer_mode_ = mode;
+    }
+    [[nodiscard]] GpuBackend gpu_backend() const noexcept {
+        return gpu_backend_;
+    }
+    void set_gpu_backend(GpuBackend backend) noexcept {
+        gpu_backend_ = backend;
     }
     [[nodiscard]] bool msu1_music() const noexcept { return msu1_music_; }
     void set_msu1_music(bool enabled) noexcept {
@@ -1259,6 +1275,7 @@ private:
     bool preview_start_requested_{};
     bool vsync_{};
     RendererMode renderer_mode_{RendererMode::gpu};
+    GpuBackend gpu_backend_{GpuBackend::automatic};
     bool msu1_music_{};
     bool msu1_available_{true};
     bool rumble_{true};

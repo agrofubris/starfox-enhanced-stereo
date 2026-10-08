@@ -876,6 +876,10 @@ bool load_pregame_settings(
             // 0 keeps the reticle on the screen plane.
             if (value < 0 || value > 65535) return false;
             loaded.stereo_crosshair_depth = static_cast<std::uint16_t>(value);
+        } else if (name == "GPU_BACKEND") {
+            // 0=AUTO, 1=DIRECT3D12, 2=VULKAN.
+            if (value < 0 || value > 2) return false;
+            loaded.gpu_backend = static_cast<std::uint8_t>(value);
         } else if (name == "SELECTED_LEVEL") {
             if (value != 0 && (value < 11 || value > 79 || value % 10 == 0)) return false;
             loaded.selected_level = static_cast<std::uint8_t>(value);
@@ -1021,6 +1025,7 @@ bool save_pregame_settings(
         || settings.stereo_output > 8U
         || settings.stereo_separation_x100 == 0U
         || settings.stereo_convergence == 0U
+        || settings.gpu_backend > 2U
         || (settings.selected_level != 0U && (settings.selected_level < 11U
             || settings.selected_level > 79U || settings.selected_level % 10U == 0U))
         || settings.language > 5U || settings.experience > 1U || settings.music_volume > 100U
@@ -1088,9 +1093,11 @@ bool save_pregame_settings(
            << static_cast<unsigned>(settings.stereo_separation_x100) << '\n'
            << "STEREO_CONVERGENCE "
            << static_cast<unsigned>(settings.stereo_convergence) << '\n'
-           << "STEREO_CROSSHAIR_DEPTH "
-           << static_cast<unsigned>(settings.stereo_crosshair_depth) << '\n'
-           << "VSYNC " << static_cast<unsigned>(settings.vsync) << '\n'
+            << "STEREO_CROSSHAIR_DEPTH "
+            << static_cast<unsigned>(settings.stereo_crosshair_depth) << '\n'
+            << "GPU_BACKEND "
+            << static_cast<unsigned>(settings.gpu_backend) << '\n'
+            << "VSYNC " << static_cast<unsigned>(settings.vsync) << '\n'
            << "RENDERER_MODE "
            << static_cast<unsigned>(settings.renderer_mode) << '\n'
            << "MSU1_MUSIC "
